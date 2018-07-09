@@ -2,6 +2,7 @@
 using System.IO;
 using SharpGraphQl;
 using System.Linq;
+using System.Xml;
 using Xunit;
 using FluentAssertions;
 using FluentAssertions.Formatting;
@@ -79,6 +80,63 @@ namespace UnitTests
                         "ksk"
                     )
                 );
+        }
+
+        [Fact]
+        public void CanLexSimpleString()
+        {
+            Tokenize("\"abcdefg\",").Should().BeEquivalentTo(
+                new Token(
+                    new LexerPosition(1, 1),
+                    new LexerPosition(1, 9),
+                    TokenType.StringValue,
+                    "abcdefg"
+                ),
+                new Token(
+                    new LexerPosition(1, 10),
+                    new LexerPosition(1, 10),
+                    TokenType.Comma,
+                    null
+                )
+            );
+        }
+
+        [Fact]
+        public void CanLexStringWithEscapeSequences()
+        {
+            Tokenize("\"ab\\ndefg\",").Should().BeEquivalentTo(
+                new Token(
+                    new LexerPosition(1, 1),
+                    new LexerPosition(1, 10),
+                    TokenType.StringValue,
+                    "ab\ndefg"
+                ),
+                new Token(
+                    new LexerPosition(1, 11),
+                    new LexerPosition(1, 11),
+                    TokenType.Comma,
+                    null
+                )
+            );
+        }
+
+        [Fact]
+        public void CanLexBlockString()
+        {
+            string blockString = "  \"\"\"\n    Hello,\n      World!\n\n    Yours,\n      GraphQL.\n  \"\"\"";
+            this.Tokenize(blockString).Should().BeEquivalentTo(
+                new Token(
+                    new LexerPosition(1, 1),
+                    new LexerPosition(1, 2),
+                    TokenType.Whitespace,
+                    null
+                ),
+                new Token(
+                    new LexerPosition(1, 3),
+                    new LexerPosition(1, 63),
+                    TokenType.StringValue,
+                    "Hello,\n  World!\n\nYours,\n  GraphQL."
+                ));
         }
 
         public IToken[] Tokenize(string src)

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
+using System.Text;
 
 namespace SharpGraphQl
 {
@@ -238,12 +240,304 @@ namespace SharpGraphQl
             int position = _currentPosition;
             CurrentTokenStart = Position;
 
+            ++position;
+            if (position >= _text.Length)
+            {
+                throw new GraphQlLexerException("Unexpected end of file. Expected: '\"' or string char", Position);
+            }
+
+            ++position;
+            if (position >= _text.Length)
+                return;
+
+            if (_text[position] == '"')
+            {
+                ++position;
+                if (position >= _text.Length || _text[position] != '"')
+                {
+                    _currentStringValue = "";
+                    _currentTokenType = TokenType.StringValue;
+
+                    CurrentTokenStart = Position;
+                    _column += (position - _currentPosition);
+                    _currentPosition = position;
+                    CurrentTokenEnd = new LexerPosition(_line, _column - 1);
+                    return;
+                }
+
+                ReadBlockString(position);
+                return;
+            }
+
             while(++position < _text.Length)
             {
+                char c = _text[position];
+                if (c == '"')
+                {
+                    int length = position - _currentPosition - 1;
+                    _currentStringValue = _text.Substring(_currentPosition + 1, length);
+                    _currentTokenType = TokenType.StringValue;
 
+                    CurrentTokenStart = Position;
+                    ++position;
+                    _column += (position - _currentPosition);
+                    _currentPosition = position;
+                    CurrentTokenEnd = new LexerPosition(_line, _column - 1);
+                    return;
+                }
+                if (c == '\\')
+                {
+                    ReadStringWithEscapeSequences(position);
+                    return;
+                }
+                if (c == '\n' || c == '\r')
+                {
+                    throw new GraphQlLexerException("Unexpected newline in string", new LexerPosition(_line, _column + (position - _currentPosition)));
+                }
             }
 
             throw new GraphQlLexerException("Missing end of string", new LexerPosition(_line, _column + (position - _currentPosition)));
+        }
+
+        private void ReadBlockString(int position)
+        {
+            _currentStringValue = GetNormalizedBlock(ref position);
+            _currentTokenType = TokenType.StringValue;
+
+            CurrentTokenStart = Position;
+            ++position;
+            _column += (position - _currentPosition);
+            _currentPosition = position;
+            CurrentTokenEnd = new LexerPosition(_line, _column - 1);
+        }
+
+        private string GetNormalizedBlock(ref int position)
+        { 
+            bool last;
+            
+            string line = ReadBlockLine(ref position, out bool firstLineBlank, out _, out last);
+            if (last)
+                return line;
+
+            List<string> lines = new List<string>();
+            if (!firstLineBlank)
+                lines.Add(line);
+            int commonIndent = -1;
+            int lastNonBlankIndex = 0;
+            int index = 0;
+            int totalLength = line.Length;
+
+            do
+            {
+                ++index;
+                line = ReadBlockLine(ref position, out bool hasNonBlank, out int indent, out last);
+                if (hasNonBlank)
+                {
+                    lastNonBlankIndex = index;
+                    if (commonIndent == -1 || commonIndent > indent)
+                        commonIndent = indent;
+                }
+
+                totalLength += line.Length;
+                lines.Add(line);
+            } while (!last);
+
+            if (lastNonBlankIndex == 0)
+                return lines[0];
+
+            // Remove common indent
+            StringBuilder buffer = new StringBuilder(totalLength);
+            buffer.Append(lines[0]);
+            int stop = lastNonBlankIndex + 1;
+            for (int i = 1; i < stop; ++i)
+            {
+                buffer.Append('\n');
+
+                string nextLine = lines[i];
+                if (nextLine.Length > commonIndent)
+                    buffer.Append(nextLine, commonIndent, nextLine.Length - commonIndent);
+            }
+
+            return buffer.ToString();
+        }
+
+        private string ReadBlockLine(ref int position, out bool hasNonBlank, out int indent, out bool last)
+        {
+            hasNonBlank = false;
+            int lineStart = position;
+            while (++position < _text.Length)
+            {
+                char c = _text[position];
+                if (c != ' ' && c != '\t')
+                    break;
+            }
+
+            if (position >= _text.Length)
+            {
+                throw new GraphQlLexerException("Block string never closed", Position);
+            }
+
+            indent = position - lineStart;
+
+            do
+            {
+                char c = _text[position];
+                string line;
+
+                switch (c)
+                {
+                    case '\\':
+                        hasNonBlank = true;
+                        int possibleNextPos = position + 4;
+                        if (possibleNextPos > _text.Length)
+                            break;
+                        if (_text[position + 1] == '"' && _text[position + 2] == '"' && _text[position + 3] == '"')
+                        {
+                            StringBuilder buffer = new StringBuilder(_text.Substring(lineStart, position - lineStart));
+                            buffer.Append("\"\"\"");
+                            position = possibleNextPos;
+                            return ReadBlockLineWithEscapes(ref position, buffer, out last);
+                        }
+
+                        break;
+
+                    case '\n':
+                        line = _text.Substring(lineStart, position - lineStart);
+                        last = false;
+                        return line;
+
+                    case '\r':
+                        line = _text.Substring(lineStart, position - lineStart);
+                        int nextPos = position + 1;
+                        if (nextPos < _text.Length && _text[nextPos] == '\n')
+                            position = nextPos;
+                        last = false;
+                        return line;
+
+                    case '"':
+                        int possibleQuoteEnd = position + 2;
+                        if (possibleQuoteEnd >= _text.Length)
+                            throw new GraphQlLexerException("Unterminated block string", Position);
+                        if (_text[position + 1] == '"' && _text[position + 2] == '"')
+                        {
+                            line = _text.Substring(lineStart, position - lineStart);
+                            position = possibleQuoteEnd + 1;
+                            last = true;
+                            return line;
+                        }
+
+                        hasNonBlank = true;
+                        break;
+
+                    default:
+                        hasNonBlank = true;
+                        break;
+                }
+            } while (++position < _text.Length);
+
+            throw new GraphQlLexerException("String block is never closed", Position);
+        }
+
+        private string ReadBlockLineWithEscapes(ref int position, StringBuilder buffer, out bool last)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void ReadStringWithEscapeSequences(int position)
+        {
+            int firstBlockLength = position - _currentPosition - 1;
+            string firstBlock = _text.Substring(_currentPosition + 1, firstBlockLength);
+            StringBuilder buffer = new StringBuilder(firstBlock);
+            AppendEscape(ref position, buffer);
+            
+            int blockStart = position + 1;
+
+            while (++position <= _text.Length)
+            {
+                char c = _text[position];
+                switch (c)
+                {
+                    case '\\':
+                        int blockLength = position - blockStart;
+                        string block = _text.Substring(blockStart, blockLength);
+                        buffer.Append(block);
+                        AppendEscape(ref position, buffer);
+                        break;
+
+                    case '\"':
+                        int strLength = position - blockStart;
+                        string finalBlock = _text.Substring(blockStart, strLength);
+                        buffer.Append(finalBlock);
+
+                        _currentStringValue = buffer.ToString();
+                        _currentTokenType = TokenType.StringValue;
+
+                        CurrentTokenStart = Position;
+                        ++position;
+                        _column += (position - _currentPosition);
+                        _currentPosition = position;
+                        CurrentTokenEnd = new LexerPosition(_line, _column - 1);
+                        return;
+
+                    case '\n':
+                    case '\r':
+                        throw new GraphQlLexerException("Unexpected newline in string", new LexerPosition(_line, _column + (position - _currentPosition)));
+                    default:
+                        break;
+                }
+            }
+        }
+
+        private void AppendEscape(ref int position, StringBuilder buffer)
+        {
+            ++position;
+            if (position >= _text.Length)
+                throw new GraphQlLexerException("Unexpected end of file. Expected: a character escape", Position);
+
+            char c = _text[position];
+            switch (c)
+            {
+                case '"':
+                case '\\':
+                case '/':
+                    buffer.Append(c);
+                    break;
+                case 'b':
+                    buffer.Append('\b');
+                    break;
+                case 'f':
+                    buffer.Append('\f');
+                    break;
+                case 'n':
+                    buffer.Append('\n');
+                    break;
+                case 'r':
+                    buffer.Append('\r');
+                    break;
+                case 't':
+                    buffer.Append('\t');
+                    break;
+                case 'u':
+                    if ((position + 4) >= _text.Length)
+                        throw new GraphQlLexerException("End of file before unicode escape", Position);
+                    string hex = _text.Substring(position + 1, 4);
+                    if (!IsHex(hex[0]) || !IsHex(hex[1]) || !IsHex(hex[2]) || !IsHex(hex[3]))
+                        throw new GraphQlLexerException("Invalid unicode escape", Position);
+                    int value = int.Parse(hex, NumberStyles.HexNumber);
+                    buffer.Append((char) value);
+                    position += 4;
+                    break;
+
+                default:
+                    throw new GraphQlLexerException("Invalid character escape: \\" + c, Position);
+            }
+        }
+
+        private bool IsHex(char c)
+        {
+            return (c >= '0' && c <= '9')
+                   || (c >= 'a' && c <= 'f')
+                   || (c >= 'A' && c <= 'F');
         }
 
         private void ReadNumber()
@@ -400,7 +694,6 @@ namespace SharpGraphQl
                     break;
             }
 
-
             int diff = (position - _currentPosition);
             _currentPosition = position;
             _column += diff;
@@ -552,3 +845,4 @@ namespace SharpGraphQl
         StringValue
     }
 }
+
