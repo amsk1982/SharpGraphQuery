@@ -246,10 +246,6 @@ namespace SharpGraphQl
                 throw new GraphQlLexerException("Unexpected end of file. Expected: '\"' or string char", Position);
             }
 
-            ++position;
-            if (position >= _text.Length)
-                return;
-
             if (_text[position] == '"')
             {
                 ++position;
@@ -264,7 +260,7 @@ namespace SharpGraphQl
                     CurrentTokenEnd = new LexerPosition(_line, _column - 1);
                     return;
                 }
-
+                
                 ReadBlockString(position);
                 return;
             }
@@ -304,8 +300,8 @@ namespace SharpGraphQl
             _currentStringValue = GetNormalizedBlock(ref position);
             _currentTokenType = TokenType.StringValue;
 
-            CurrentTokenStart = Position;
             ++position;
+            CurrentTokenStart = Position;
             _column += (position - _currentPosition);
             _currentPosition = position;
             CurrentTokenEnd = new LexerPosition(_line, _column - 1);
@@ -315,31 +311,41 @@ namespace SharpGraphQl
         { 
             bool last;
             
-            string line = ReadBlockLine(ref position, out bool firstLineBlank, out _, out last);
+            string line = ReadBlockLine(ref position, out bool firstLineHasChars, out _, out last);
             if (last)
                 return line;
 
             List<string> lines = new List<string>();
-            if (!firstLineBlank)
+            int totalLength = 0;
+            if (firstLineHasChars)
+            {
                 lines.Add(line);
+                totalLength = line.Length;
+            }
+
             int commonIndent = -1;
             int lastNonBlankIndex = 0;
             int index = 0;
-            int totalLength = line.Length;
+            bool foundAnyNonBlank = firstLineHasChars;
 
             do
             {
                 ++index;
                 line = ReadBlockLine(ref position, out bool hasNonBlank, out int indent, out last);
-                if (hasNonBlank)
-                {
-                    lastNonBlankIndex = index;
-                    if (commonIndent == -1 || commonIndent > indent)
-                        commonIndent = indent;
-                }
+                foundAnyNonBlank = foundAnyNonBlank || hasNonBlank;
 
-                totalLength += line.Length;
-                lines.Add(line);
+                if (foundAnyNonBlank)
+                {
+                    totalLength += line.Length;
+                    lines.Add(line);
+
+                    if (hasNonBlank)
+                    {
+                        lastNonBlankIndex = lines.Count - 1;
+                        if (commonIndent == -1 || commonIndent > indent)
+                            commonIndent = indent;
+                    }
+                }
             } while (!last);
 
             if (lastNonBlankIndex == 0)
@@ -347,7 +353,17 @@ namespace SharpGraphQl
 
             // Remove common indent
             StringBuilder buffer = new StringBuilder(totalLength);
-            buffer.Append(lines[0]);
+            string firstLine = lines[0];
+            if (!firstLineHasChars)
+            {
+                if (firstLine.Length > commonIndent)
+                    buffer.Append(firstLine, commonIndent, firstLine.Length - commonIndent);
+            }
+            else
+            {
+                buffer.Append(firstLine);
+            }
+
             int stop = lastNonBlankIndex + 1;
             for (int i = 1; i < stop; ++i)
             {
@@ -364,7 +380,7 @@ namespace SharpGraphQl
         private string ReadBlockLine(ref int position, out bool hasNonBlank, out int indent, out bool last)
         {
             hasNonBlank = false;
-            int lineStart = position;
+            int lineStart = position + 1;
             while (++position < _text.Length)
             {
                 char c = _text[position];
@@ -421,12 +437,15 @@ namespace SharpGraphQl
                         if (_text[position + 1] == '"' && _text[position + 2] == '"')
                         {
                             line = _text.Substring(lineStart, position - lineStart);
-                            position = possibleQuoteEnd + 1;
+                            position = possibleQuoteEnd;
                             last = true;
                             return line;
                         }
 
                         hasNonBlank = true;
+                        break;
+
+                    case ' ': case '\t':
                         break;
 
                     default:
@@ -440,7 +459,64 @@ namespace SharpGraphQl
 
         private string ReadBlockLineWithEscapes(ref int position, StringBuilder buffer, out bool last)
         {
-            throw new NotImplementedException();
+            int blockStart = position;
+
+            do
+            {
+                string line;
+                char c = _text[position];
+
+                switch (c)
+                {
+                    case '\\':
+                        int possibleNextPos = position + 4;
+                        if (possibleNextPos > _text.Length)
+                            break;
+                        if (_text[position + 1] == '"' && _text[position + 2] == '"' && _text[position + 3] == '"')
+                        {
+                            line = _text.Substring(blockStart, position - blockStart);
+                            buffer.Append(line);
+
+                            buffer.Append("\"\"\"");
+                            position = possibleNextPos - 1;
+                            blockStart = possibleNextPos;
+                        }
+
+                        break;
+
+                    case '\n':
+                        line = _text.Substring(blockStart, position - blockStart);
+                        buffer.Append(line);
+                        last = false;
+                        return buffer.ToString();
+
+                    case '\r':
+                        line = _text.Substring(blockStart, position - blockStart);
+                        buffer.Append(line);
+                        int nextPos = position + 1;
+                        if (nextPos < _text.Length && _text[nextPos] == '\n')
+                            position = nextPos;
+                        last = false;
+                        return buffer.ToString();
+
+                    case '"':
+                        int possibleQuoteEnd = position + 2;
+                        if (possibleQuoteEnd >= _text.Length)
+                            throw new GraphQlLexerException("Unterminated block string", Position);
+                        if (_text[position + 1] == '"' && _text[position + 2] == '"')
+                        {
+                            line = _text.Substring(blockStart, position - blockStart);
+                            buffer.Append(line);
+                            position = possibleQuoteEnd;
+                            last = true;
+                            return buffer.ToString();
+                        }
+
+                        break;
+                }
+            } while (++position < _text.Length);
+
+            throw new GraphQlLexerException("Unterminated string", new LexerPosition(_line, _column + (position - _currentPosition)));
         }
 
         private void ReadStringWithEscapeSequences(int position)
@@ -462,6 +538,7 @@ namespace SharpGraphQl
                         string block = _text.Substring(blockStart, blockLength);
                         buffer.Append(block);
                         AppendEscape(ref position, buffer);
+                        blockStart = position + 1;
                         break;
 
                     case '\"':
@@ -486,6 +563,8 @@ namespace SharpGraphQl
                         break;
                 }
             }
+
+            throw new GraphQlLexerException("Unterminated string", new LexerPosition(_line, _column + (position - _currentPosition)));
         }
 
         private void AppendEscape(ref int position, StringBuilder buffer)
@@ -797,6 +876,7 @@ namespace SharpGraphQl
     public class GraphQlLexerException : Exception
     {
         public GraphQlLexerException(string message, LexerPosition lexerPosition)
+            : base(message)
         {
 
         }

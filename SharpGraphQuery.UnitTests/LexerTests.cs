@@ -1,13 +1,11 @@
 ﻿using System;
-using System.IO;
-using SharpGraphQl;
 using System.Linq;
-using System.Xml;
-using Xunit;
 using FluentAssertions;
 using FluentAssertions.Formatting;
+using SharpGraphQl;
+using Xunit;
 
-namespace UnitTests
+namespace SharpGraphQuery.UnitTests
 {
     public class LexerTests
     {
@@ -104,16 +102,16 @@ namespace UnitTests
         [Fact]
         public void CanLexStringWithEscapeSequences()
         {
-            Tokenize("\"ab\\ndefg\",").Should().BeEquivalentTo(
+            Tokenize("\"ab\\nde\\\"fg\",").Should().BeEquivalentTo(
                 new Token(
                     new LexerPosition(1, 1),
-                    new LexerPosition(1, 10),
+                    new LexerPosition(1, 12),
                     TokenType.StringValue,
-                    "ab\ndefg"
+                    "ab\nde\"fg"
                 ),
                 new Token(
-                    new LexerPosition(1, 11),
-                    new LexerPosition(1, 11),
+                    new LexerPosition(1, 13),
+                    new LexerPosition(1, 13),
                     TokenType.Comma,
                     null
                 )
@@ -123,7 +121,7 @@ namespace UnitTests
         [Fact]
         public void CanLexBlockString()
         {
-            string blockString = "  \"\"\"\n    Hello,\n      World!\n\n    Yours,\n      GraphQL.\n  \"\"\"";
+            string blockString = "  \"\"\"\n    Hello,\n      World!\n\n    Yours,\n      GraphQL.\n  \"\"\",";
             this.Tokenize(blockString).Should().BeEquivalentTo(
                 new Token(
                     new LexerPosition(1, 1),
@@ -133,9 +131,41 @@ namespace UnitTests
                 ),
                 new Token(
                     new LexerPosition(1, 3),
-                    new LexerPosition(1, 63),
+                    new LexerPosition(1, 62),
                     TokenType.StringValue,
                     "Hello,\n  World!\n\nYours,\n  GraphQL."
+                ),
+                new Token(
+                    new LexerPosition(1, 63),
+                    new LexerPosition(1, 63),
+                    TokenType.Comma,
+                    null
+                ));
+        }
+
+        [Fact]
+        public void CanLexEmptyBlockString()
+        {
+            string blockString = "\"\"\"\"\"\"";
+            this.Tokenize(blockString).Should().BeEquivalentTo(
+                new Token(
+                    new LexerPosition(1, 1),
+                    new LexerPosition(1, 6),
+                    TokenType.StringValue,
+                    ""
+                ));
+        }
+
+        [Fact]
+        public void CanLexBlockStringWithEscape()
+        {
+            string blockString = "\"\"\"   a\r\n   b\r\n   c\r\n   \\\"\"\"\r\n\"\"\"";
+            this.Tokenize(blockString).Should().BeEquivalentTo(
+                new Token(
+                    new LexerPosition(1, 1),
+                    new LexerPosition(1, 33),
+                    TokenType.StringValue,
+                    "   a\nb\nc\n\"\"\""
                 ));
         }
 
