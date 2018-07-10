@@ -55,7 +55,20 @@ namespace SharpGraphQl
         }
     }
 
-    public class GraphQueryTokenReader : IToken
+    public interface IGraphQueryTokenReader
+    {
+        IToken ToToken();
+        bool Next();
+        LexerPosition StartPosition { get; }
+        LexerPosition EndPosition { get; }
+        TokenType TokenType { get; }
+        string StringValue { get; }
+        int? IntValue { get; }
+        double? DoubleValue { get; }
+        object Value { get; }
+    }
+
+    public class GraphQueryTokenReader : IToken, IGraphQueryTokenReader
     {
         private readonly string _text;
 
@@ -100,7 +113,10 @@ namespace SharpGraphQl
             _currentDoubleValue = null;
 
             if (_currentPosition >= _text.Length)
+            {
+                _currentTokenType = TokenType.None;
                 return false;
+            }
 
             char c = _text[_currentPosition];
             switch (c)
@@ -823,7 +839,7 @@ namespace SharpGraphQl
             CurrentTokenEnd = new LexerPosition(_line, _column - 1);
 
             _currentStringValue = null;
-            _currentTokenType = TokenType.Whitespace;
+            _currentTokenType = TokenType.Comment;
         }
 
         private void ReadEllipsis()
@@ -922,7 +938,8 @@ namespace SharpGraphQl
         Name,
         IntValue,
         FloatValue,
-        StringValue
+        StringValue,
+        Comment
     }
 }
 
