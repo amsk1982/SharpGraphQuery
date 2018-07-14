@@ -114,7 +114,7 @@ namespace SharpGraphQl
 
             if (_currentPosition >= _text.Length)
             {
-                _currentTokenType = TokenType.None;
+                _currentTokenType = TokenType.EOF;
                 return false;
             }
 
@@ -919,6 +919,7 @@ namespace SharpGraphQl
     public enum TokenType
     {
         None,
+        EOF,
         Whitespace,
         LineTerminator,
         Comma,

@@ -12,16 +12,29 @@ namespace SharpGraphQl
 
     public class RootNode : IGraphQueryNode
     {
-        public List<OperationDefinitionNode> Operations { get; }
-            = new List<OperationDefinitionNode>();
+        public List<IDefinitionNode> Definitions { get; }
+            = new List<IDefinitionNode>();
     }
 
-    public class OperationDefinitionNode : IGraphQueryNode
+    public interface IDefinitionNode
+    {
+        string Name { get; }
+    }
+
+    public class OperationDefinitionNode : IGraphQueryNode, IDefinitionNode
     {
         public OperationType OperationType { get; set; }
         [CanBeNull]
         public string Name { get; set; }
         public List<VariableDefinitionNode> VariableDefinitions { get; set; }
+        public List<DirectiveNode> Directives { get; set; }
+        public SelectionSetNode SelectionSet { get; set; }
+    }
+
+    public class FragmentDefinitionNode : IGraphQueryNode, IDefinitionNode
+    {
+        public string Name { get; set; }
+        public string OnType { get; set; }
         public List<DirectiveNode> Directives { get; set; }
         public SelectionSetNode SelectionSet { get; set; }
     }
@@ -60,6 +73,11 @@ namespace SharpGraphQl
     {
         public bool IsConstant { get; } = false;
         public string Name { get; set; }
+
+        public VariableValueNode(string name)
+        {
+            Name = name;
+        }
     }
 
     public abstract class ConstValueNode<T> : IValueNode
@@ -123,13 +141,18 @@ namespace SharpGraphQl
     {
         [CanBeNull]
         public string Alias { get; set; }
-
         public string Name { get; set; }
         public List<ArgumentNode> Arguments { get; set; }
         public List<DirectiveNode> Directives { get; set; }
 
         [CanBeNull]
         public SelectionSetNode SelectionSet { get; set; }
+
+        public FieldNode() { }
+        public FieldNode(string name)
+        {
+            Name = name;
+        }
     }
 
     public class FragmentSpreadNode : ISelectionItemNode, IGraphQueryNode
@@ -167,6 +190,13 @@ namespace SharpGraphQl
     public class NamedTypeNode : ITypeNode
     {
         public string Name { get; set; }
+
+        //public NamedTypeNode() { }
+
+        public NamedTypeNode(string name)
+        {
+            Name = name;
+        }
     }
 
     public class ListTypeNode : ITypeNode
@@ -177,5 +207,10 @@ namespace SharpGraphQl
     public class NotNullTypeNode : ITypeNode
     {
         public ITypeNode Inner { get; set; }
+
+        public NotNullTypeNode(ITypeNode inner)
+        {
+            Inner = inner;
+        }
     }
 }

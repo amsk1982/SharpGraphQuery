@@ -1,0 +1,20 @@
+﻿query getHobbits($book: Int!) {
+	hobbits(book: $book) {
+		id,
+		name,
+		heightInMeters: height(units: METERS),
+		interactsWith {
+			id,
+			name,
+			lunch
+			... on Enemy {
+				specialPower
+			}
+		}
+	}
+}
+
+fragment FriendFragment on Hobbit {
+	lunch
+	starSign
+}

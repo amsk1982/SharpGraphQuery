@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 
 namespace SharpGraphQl
 {
@@ -16,17 +17,19 @@ namespace SharpGraphQl
         public RootNode Parse()
         {
             RootNode node = new RootNode();
+            if (!NextToken())
+                return node;
 
-            while (NextToken())
+            while (_tokenReader.TokenType != TokenType.EOF)
             {
                 switch(_tokenReader.TokenType)
                 {
                     case TokenType.Name:
-                        node.Operations.Add(ParseNamedDefinition());
+                        node.Definitions.Add(ParseExecutableDefinition());
                         break;
 
                     case TokenType.OpenBrace:
-                        node.Operations.Add(ParseAnonomousDefinition());
+                        node.Definitions.Add(ParseAnonomousDefinition());
                         break;
 
                     default:
@@ -37,7 +40,59 @@ namespace SharpGraphQl
             return node;
         }
 
-        private OperationDefinitionNode ParseNamedDefinition()
+        private IDefinitionNode ParseExecutableDefinition()
+        {
+            if (_tokenReader.TokenType != TokenType.Name)
+                throw new InvalidOperationException("Executable definition should start with a name");
+
+            string name = _tokenReader.StringValue;
+            if (string.Equals(name, "fragment", StringComparison.OrdinalIgnoreCase))
+                return ParseFragmentDefinition();
+
+            return ParseOperationDefinition();
+        }
+
+        private FragmentDefinitionNode ParseFragmentDefinition()
+        {
+            NextTokenRequired();
+            if (_tokenReader.TokenType != TokenType.Name)
+                UnexpectedToken(TokenType.Name);
+            string name = _tokenReader.StringValue;
+            NextTokenRequired();
+
+            if (_tokenReader.TokenType != TokenType.Name)
+                UnexpectedToken(TokenType.Name);
+            if (!string.Equals(_tokenReader.StringValue, "on", StringComparison.Ordinal))
+                throw ParseError("Expeced 'on' got: " + _tokenReader.StringValue);
+            NextTokenRequired();
+
+            if (_tokenReader.TokenType != TokenType.Name)
+                UnexpectedToken(TokenType.Name);
+            string typeName = _tokenReader.StringValue;
+            NextTokenRequired();
+
+            List<DirectiveNode> directives = null;
+            if (_tokenReader.TokenType == TokenType.AtSign)
+            {
+                directives = ParseDirectives(1);
+            }
+
+            if (_tokenReader.TokenType != TokenType.OpenBrace)
+                throw UnexpectedToken(TokenType.OpenBrace, TokenType.AtSign);
+
+            SelectionSetNode selectionSet = ParseSelectionSet(1);
+
+            return new FragmentDefinitionNode
+            {
+                Name = name,
+                OnType = typeName,
+                Directives = directives ?? new List<DirectiveNode>(),
+                SelectionSet = selectionSet
+
+            };
+        }
+
+        private OperationDefinitionNode ParseOperationDefinition()
         {
             OperationType operationType = GetOperationType(_tokenReader.StringValue);
             string operationName = null;
@@ -151,6 +206,7 @@ namespace SharpGraphQl
                 variableNodes.Add(node);
             }
 
+            NextTokenRequired();
             return variableNodes;
         }
 
@@ -163,7 +219,7 @@ namespace SharpGraphQl
             if (_tokenReader.TokenType == TokenType.Bang)
             {
                 NextTokenRequired();
-                return new NotNullTypeNode { Inner = nullableType };
+                return new NotNullTypeNode(nullableType);
             }
 
             return nullableType;
@@ -186,10 +242,7 @@ namespace SharpGraphQl
 
         private ITypeNode ParseNamedType()
         {
-            var namedType = new NamedTypeNode
-            {
-                Name = _tokenReader.StringValue
-            };
+            var namedType = new NamedTypeNode(_tokenReader.StringValue);
             NextTokenRequired();
             return namedType;
         }
@@ -242,6 +295,7 @@ namespace SharpGraphQl
 
             NextTokenRequired();
             SelectionSetNode selectionSetNode = new SelectionSetNode();
+            selectionSetNode.Items = new List<ISelectionItemNode>();
 
             while(true)
             {
@@ -258,7 +312,7 @@ namespace SharpGraphQl
                         break;
 
                     case TokenType.CloseBrace:
-                        NextTokenRequired();
+                        NextToken();
                         return selectionSetNode;
 
                     default:
@@ -352,6 +406,7 @@ namespace SharpGraphQl
                 argumentNodes.Add(node);
             }
 
+            NextTokenRequired();
             return argumentNodes;
         }
 
@@ -365,21 +420,26 @@ namespace SharpGraphQl
                 case TokenType.Dollar:
                     return ParseVariable();
                 case TokenType.IntValue:
-                    return new IntValueNode()
-                    {
-                        Value = _tokenReader.IntValue ?? throw new InvalidOperationException("Tokenizer should have an int value")
-                    };
+                    int intValue = _tokenReader.IntValue ??
+                                throw new InvalidOperationException("Tokenizer should have an int value");
+                    NextTokenRequired();
+                    return new IntValueNode() { Value = intValue };
 
                 case TokenType.FloatValue:
+                    double floatValue = _tokenReader.DoubleValue ??
+                                        throw new InvalidOperationException("Tokenizer should have an float value");
+                    NextTokenRequired();
                     return new FloatValueNode()
                     {
-                        Value = _tokenReader.DoubleValue ?? throw new InvalidOperationException("Tokenizer should have an float value")
+                        Value = floatValue
                     };
 
                 case TokenType.StringValue:
+                    string stringValue = _tokenReader.StringValue;
+                    NextTokenRequired();
                     return new StringValueNode()
                     {
-                        Value = _tokenReader.StringValue
+                        Value = stringValue
                     };
 
                 case TokenType.Name:
@@ -422,6 +482,7 @@ namespace SharpGraphQl
                 objectFields.Add(fieldNode);
             }
 
+            NextTokenRequired();
             return new ObjectValueNode(objectFields);
         }
 
@@ -439,6 +500,7 @@ namespace SharpGraphQl
                 listContents.Add(value);
             }
 
+            NextTokenRequired();
             return new ListValueNode(listContents);
         }
 
@@ -451,11 +513,7 @@ namespace SharpGraphQl
             if (_tokenReader.TokenType != TokenType.Name)
                 throw UnexpectedToken(TokenType.Name);
 
-            VariableValueNode variable = new VariableValueNode()
-            {
-                Name = _tokenReader.StringValue
-            };
-
+            VariableValueNode variable = new VariableValueNode(_tokenReader.StringValue);
             NextTokenRequired();
             return variable;
         }
@@ -469,7 +527,8 @@ namespace SharpGraphQl
                 return new BooleanValueNode() { Value = false };
             if (string.Equals(name, "null", StringComparison.Ordinal))
                 return new NullValueNode();
-
+ 
+            NextTokenRequired();
             return new EnumValueNode(name);
         }
 
