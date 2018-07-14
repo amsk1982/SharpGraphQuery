@@ -24,7 +24,7 @@ namespace SharpGraphQuery.UnitTests.ParserTests
                 query = rdr.ReadToEnd();
             }
 
-            GraphQueryTokenReader reader = new GraphQueryTokenReader(query);
+            GraphQueryLexer reader = new GraphQueryLexer(query);
             Parser = new GraphQueryParser(reader);
         }
 

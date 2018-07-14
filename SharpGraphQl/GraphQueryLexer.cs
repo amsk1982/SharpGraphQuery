@@ -55,7 +55,7 @@ namespace SharpGraphQl
         }
     }
 
-    public interface IGraphQueryTokenReader
+    public interface IGraphQueryLexer
     {
         IToken ToToken();
         bool Next();
@@ -68,7 +68,7 @@ namespace SharpGraphQl
         object Value { get; }
     }
 
-    public class GraphQueryTokenReader : IToken, IGraphQueryTokenReader
+    public class GraphQueryLexer : IToken, IGraphQueryLexer
     {
         private readonly string _text;
 
@@ -87,14 +87,14 @@ namespace SharpGraphQl
 
         private LexerPosition Position => new LexerPosition(_line, _column);
 
-        public GraphQueryTokenReader(string text)
+        public GraphQueryLexer(string text)
         {
             _text = text;
         }
 
         public static IEnumerable<IToken> LexAll(string src)
         {
-            GraphQueryTokenReader rdr = new GraphQueryTokenReader(src);
+            GraphQueryLexer rdr = new GraphQueryLexer(src);
             while (rdr.Next())
             {
                 yield return rdr.ToToken();
@@ -221,7 +221,7 @@ namespace SharpGraphQl
                     return true;
 
                 default:
-                    throw new GraphQlLexerException("Unknown character in query: " + c, Position);
+                    throw new GraphQueryLexerException("Unknown character in query: " + c, Position);
             }
         }
 
@@ -259,7 +259,7 @@ namespace SharpGraphQl
             ++position;
             if (position >= _text.Length)
             {
-                throw new GraphQlLexerException("Unexpected end of file. Expected: '\"' or string char", Position);
+                throw new GraphQueryLexerException("Unexpected end of file. Expected: '\"' or string char", Position);
             }
 
             if (_text[position] == '"')
@@ -304,11 +304,11 @@ namespace SharpGraphQl
                 }
                 if (c == '\n' || c == '\r')
                 {
-                    throw new GraphQlLexerException("Unexpected newline in string", new LexerPosition(_line, _column + (position - _currentPosition)));
+                    throw new GraphQueryLexerException("Unexpected newline in string", new LexerPosition(_line, _column + (position - _currentPosition)));
                 }
             }
 
-            throw new GraphQlLexerException("Missing end of string", new LexerPosition(_line, _column + (position - _currentPosition)));
+            throw new GraphQueryLexerException("Missing end of string", new LexerPosition(_line, _column + (position - _currentPosition)));
         }
 
         private void ReadBlockString(int position)
@@ -406,7 +406,7 @@ namespace SharpGraphQl
 
             if (position >= _text.Length)
             {
-                throw new GraphQlLexerException("Block string never closed", Position);
+                throw new GraphQueryLexerException("Block string never closed", Position);
             }
 
             indent = position - lineStart;
@@ -449,7 +449,7 @@ namespace SharpGraphQl
                     case '"':
                         int possibleQuoteEnd = position + 2;
                         if (possibleQuoteEnd >= _text.Length)
-                            throw new GraphQlLexerException("Unterminated block string", Position);
+                            throw new GraphQueryLexerException("Unterminated block string", Position);
                         if (_text[position + 1] == '"' && _text[position + 2] == '"')
                         {
                             line = _text.Substring(lineStart, position - lineStart);
@@ -470,7 +470,7 @@ namespace SharpGraphQl
                 }
             } while (++position < _text.Length);
 
-            throw new GraphQlLexerException("String block is never closed", Position);
+            throw new GraphQueryLexerException("String block is never closed", Position);
         }
 
         private string ReadBlockLineWithEscapes(ref int position, StringBuilder buffer, out bool last)
@@ -518,7 +518,7 @@ namespace SharpGraphQl
                     case '"':
                         int possibleQuoteEnd = position + 2;
                         if (possibleQuoteEnd >= _text.Length)
-                            throw new GraphQlLexerException("Unterminated block string", Position);
+                            throw new GraphQueryLexerException("Unterminated block string", Position);
                         if (_text[position + 1] == '"' && _text[position + 2] == '"')
                         {
                             line = _text.Substring(blockStart, position - blockStart);
@@ -532,7 +532,7 @@ namespace SharpGraphQl
                 }
             } while (++position < _text.Length);
 
-            throw new GraphQlLexerException("Unterminated string", new LexerPosition(_line, _column + (position - _currentPosition)));
+            throw new GraphQueryLexerException("Unterminated string", new LexerPosition(_line, _column + (position - _currentPosition)));
         }
 
         private void ReadStringWithEscapeSequences(int position)
@@ -574,20 +574,20 @@ namespace SharpGraphQl
 
                     case '\n':
                     case '\r':
-                        throw new GraphQlLexerException("Unexpected newline in string", new LexerPosition(_line, _column + (position - _currentPosition)));
+                        throw new GraphQueryLexerException("Unexpected newline in string", new LexerPosition(_line, _column + (position - _currentPosition)));
                     default:
                         break;
                 }
             }
 
-            throw new GraphQlLexerException("Unterminated string", new LexerPosition(_line, _column + (position - _currentPosition)));
+            throw new GraphQueryLexerException("Unterminated string", new LexerPosition(_line, _column + (position - _currentPosition)));
         }
 
         private void AppendEscape(ref int position, StringBuilder buffer)
         {
             ++position;
             if (position >= _text.Length)
-                throw new GraphQlLexerException("Unexpected end of file. Expected: a character escape", Position);
+                throw new GraphQueryLexerException("Unexpected end of file. Expected: a character escape", Position);
 
             char c = _text[position];
             switch (c)
@@ -614,17 +614,17 @@ namespace SharpGraphQl
                     break;
                 case 'u':
                     if ((position + 4) >= _text.Length)
-                        throw new GraphQlLexerException("End of file before unicode escape", Position);
+                        throw new GraphQueryLexerException("End of file before unicode escape", Position);
                     string hex = _text.Substring(position + 1, 4);
                     if (!IsHex(hex[0]) || !IsHex(hex[1]) || !IsHex(hex[2]) || !IsHex(hex[3]))
-                        throw new GraphQlLexerException("Invalid unicode escape", Position);
+                        throw new GraphQueryLexerException("Invalid unicode escape", Position);
                     int value = int.Parse(hex, NumberStyles.HexNumber);
                     buffer.Append((char) value);
                     position += 4;
                     break;
 
                 default:
-                    throw new GraphQlLexerException("Invalid character escape: \\" + c, Position);
+                    throw new GraphQueryLexerException("Invalid character escape: \\" + c, Position);
             }
         }
 
@@ -697,7 +697,7 @@ namespace SharpGraphQl
                 ++position;
                 if (position >= _text.Length || !IsDigit(_text[position]))
                 {
-                    throw new GraphQlLexerException("Invalid token. Expecting a digit", new LexerPosition(_line, _column + 1));
+                    throw new GraphQueryLexerException("Invalid token. Expecting a digit", new LexerPosition(_line, _column + 1));
                 }
             }
             if (_text[position] == '0')
@@ -712,7 +712,7 @@ namespace SharpGraphQl
                     }
                     if (c == '0')
                     {
-                        throw new GraphQlLexerException("Invalid token. Expecting a non-zero digit but got '0'", 
+                        throw new GraphQueryLexerException("Invalid token. Expecting a non-zero digit but got '0'", 
                             new LexerPosition(_line, _column + (negative ? 2 : 1)));
                     }
                 }
@@ -730,7 +730,7 @@ namespace SharpGraphQl
         {
             ++position;
             if (position >= _text.Length || !IsDigit(_text[position]))
-                throw new GraphQlLexerException("Missing fractional digits", Position);
+                throw new GraphQueryLexerException("Missing fractional digits", Position);
 
             while(++position < _text.Length)
             {
@@ -745,7 +745,7 @@ namespace SharpGraphQl
             ++position;
             if (position >= _text.Length)
             {
-                throw new GraphQlLexerException("Invalid exponent", Position);
+                throw new GraphQueryLexerException("Invalid exponent", Position);
             }
 
             char c = _text[position];
@@ -754,14 +754,14 @@ namespace SharpGraphQl
                 ++position;
                 if (position >= _text.Length)
                 {
-                    throw new GraphQlLexerException("Invalid exponent", Position);
+                    throw new GraphQueryLexerException("Invalid exponent", Position);
                 }
             }
 
             c = _text[position];
             if (!IsDigit(c))
             {
-                throw new GraphQlLexerException("Invalid exponent", Position);
+                throw new GraphQueryLexerException("Invalid exponent", Position);
             }
 
             while(++position < _text.Length)
@@ -847,19 +847,19 @@ namespace SharpGraphQl
             int lastEllipsisPos = _currentPosition + 2;
             if (lastEllipsisPos >= _text.Length)
             {
-                throw new GraphQlLexerException("Invalid token, expecting '.'", Position);
+                throw new GraphQueryLexerException("Invalid token, expecting '.'", Position);
             }
 
             if (_text[_currentPosition + 1] != '.')
             {
                 _currentPosition += 1;
-                throw new GraphQlLexerException("Invalid token, expecting '.'", Position);
+                throw new GraphQueryLexerException("Invalid token, expecting '.'", Position);
             }
 
             if (_text[_currentPosition + 2] != '.')
             {
                 _currentPosition += 2;
-                throw new GraphQlLexerException("Invalid token, expecting '.'", Position);
+                throw new GraphQueryLexerException("Invalid token, expecting '.'", Position);
             }
 
             CurrentTokenStart = new LexerPosition(_line, _column - 1);
@@ -889,9 +889,9 @@ namespace SharpGraphQl
         public object Value => ((object)StringValue) ?? ((object)IntValue) ?? ((object)DoubleValue);
     }
 
-    public class GraphQlLexerException : Exception
+    public class GraphQueryLexerException : Exception
     {
-        public GraphQlLexerException(string message, LexerPosition lexerPosition)
+        public GraphQueryLexerException(string message, LexerPosition lexerPosition)
             : base(message)
         {
 

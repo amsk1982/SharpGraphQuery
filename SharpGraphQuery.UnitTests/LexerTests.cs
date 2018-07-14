@@ -171,7 +171,7 @@ namespace SharpGraphQuery.UnitTests
 
         public IToken[] Tokenize(string src)
         {
-            var tokens = GraphQueryTokenReader.LexAll(src).ToArray();
+            var tokens = GraphQueryLexer.LexAll(src).ToArray();
             return tokens;
         }
     }

@@ -6,12 +6,12 @@ namespace SharpGraphQl
 {
     public class GraphQueryParser 
     {
-        private readonly IGraphQueryTokenReader _tokenReader;
+        private readonly IGraphQueryLexer _lexer;
         private const int MaxSelectionSetDepth = 100;
 
-        public GraphQueryParser(IGraphQueryTokenReader graphQueryTokenReader)
+        public GraphQueryParser(IGraphQueryLexer graphQueryLexer)
         {
-            _tokenReader = graphQueryTokenReader;
+            _lexer = graphQueryLexer;
         }
 
         public RootNode Parse()
@@ -20,9 +20,9 @@ namespace SharpGraphQl
             if (!NextToken())
                 return node;
 
-            while (_tokenReader.TokenType != TokenType.EOF)
+            while (_lexer.TokenType != TokenType.EOF)
             {
-                switch(_tokenReader.TokenType)
+                switch(_lexer.TokenType)
                 {
                     case TokenType.Name:
                         node.Definitions.Add(ParseExecutableDefinition());
@@ -42,10 +42,10 @@ namespace SharpGraphQl
 
         private IDefinitionNode ParseExecutableDefinition()
         {
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 throw new InvalidOperationException("Executable definition should start with a name");
 
-            string name = _tokenReader.StringValue;
+            string name = _lexer.StringValue;
             if (string.Equals(name, "fragment", StringComparison.OrdinalIgnoreCase))
                 return ParseFragmentDefinition();
 
@@ -55,29 +55,29 @@ namespace SharpGraphQl
         private FragmentDefinitionNode ParseFragmentDefinition()
         {
             NextTokenRequired();
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 UnexpectedToken(TokenType.Name);
-            string name = _tokenReader.StringValue;
+            string name = _lexer.StringValue;
             NextTokenRequired();
 
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 UnexpectedToken(TokenType.Name);
-            if (!string.Equals(_tokenReader.StringValue, "on", StringComparison.Ordinal))
-                throw ParseError("Expeced 'on' got: " + _tokenReader.StringValue);
+            if (!string.Equals(_lexer.StringValue, "on", StringComparison.Ordinal))
+                throw ParseError("Expeced 'on' got: " + _lexer.StringValue);
             NextTokenRequired();
 
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 UnexpectedToken(TokenType.Name);
-            string typeName = _tokenReader.StringValue;
+            string typeName = _lexer.StringValue;
             NextTokenRequired();
 
             List<DirectiveNode> directives = null;
-            if (_tokenReader.TokenType == TokenType.AtSign)
+            if (_lexer.TokenType == TokenType.AtSign)
             {
                 directives = ParseDirectives(1);
             }
 
-            if (_tokenReader.TokenType != TokenType.OpenBrace)
+            if (_lexer.TokenType != TokenType.OpenBrace)
                 throw UnexpectedToken(TokenType.OpenBrace, TokenType.AtSign);
 
             SelectionSetNode selectionSet = ParseSelectionSet(1);
@@ -94,29 +94,29 @@ namespace SharpGraphQl
 
         private OperationDefinitionNode ParseOperationDefinition()
         {
-            OperationType operationType = GetOperationType(_tokenReader.StringValue);
+            OperationType operationType = GetOperationType(_lexer.StringValue);
             string operationName = null;
             List<VariableDefinitionNode> variablesList = null;
             List<DirectiveNode> directives = null;
 
             NextTokenRequired();
-            if (_tokenReader.TokenType == TokenType.Name)
+            if (_lexer.TokenType == TokenType.Name)
             {
-                operationName = _tokenReader.StringValue;
+                operationName = _lexer.StringValue;
                 NextTokenRequired();
             }
 
-            if (_tokenReader.TokenType == TokenType.OpenParen)
+            if (_lexer.TokenType == TokenType.OpenParen)
             {
                 variablesList = ParseVariables(1);
             }
 
-            if (_tokenReader.TokenType == TokenType.AtSign)
+            if (_lexer.TokenType == TokenType.AtSign)
             {
                 directives = ParseDirectives(1);
             }
 
-            if (_tokenReader.TokenType != TokenType.OpenBrace)
+            if (_lexer.TokenType != TokenType.OpenBrace)
                 throw UnexpectedToken(TokenType.OpenBrace);
 
             SelectionSetNode selectionSetNode = ParseSelectionSet(1);
@@ -135,20 +135,20 @@ namespace SharpGraphQl
 
         private List<DirectiveNode> ParseDirectives(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.AtSign)
+            if (_lexer.TokenType != TokenType.AtSign)
                 throw new InvalidOperationException("Expected AtSign");
 
             List<DirectiveNode> directives = new List<DirectiveNode>();
             do
             {
                 NextTokenRequired();
-                if (_tokenReader.TokenType != TokenType.Name)
+                if (_lexer.TokenType != TokenType.Name)
                     throw UnexpectedToken(TokenType.Name);
 
-                string directiveName = _tokenReader.StringValue;
+                string directiveName = _lexer.StringValue;
                 List<ArgumentNode> argumentNodes = null;
 
-                if (NextToken() && _tokenReader.TokenType == TokenType.OpenParen)
+                if (NextToken() && _lexer.TokenType == TokenType.OpenParen)
                 {
                     argumentNodes = ParseArguments(depth);
                 }
@@ -161,39 +161,39 @@ namespace SharpGraphQl
 
                 directives.Add(directive);
 
-            } while(_tokenReader.TokenType == TokenType.AtSign);
+            } while(_lexer.TokenType == TokenType.AtSign);
 
             return directives;
         }
 
         private List<VariableDefinitionNode> ParseVariables(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.OpenParen)
+            if (_lexer.TokenType != TokenType.OpenParen)
                 throw new InvalidOperationException("Variables should start at open paren");
 
             NextTokenRequired();
 
             List<VariableDefinitionNode> variableNodes = new List<VariableDefinitionNode>();
-            while(_tokenReader.TokenType != TokenType.CloseParen)
+            while(_lexer.TokenType != TokenType.CloseParen)
             {
-                if (_tokenReader.TokenType != TokenType.Dollar)
+                if (_lexer.TokenType != TokenType.Dollar)
                     throw UnexpectedToken(TokenType.Dollar, TokenType.CloseParen);
 
                 NextTokenRequired();
-                if (_tokenReader.TokenType != TokenType.Name)
+                if (_lexer.TokenType != TokenType.Name)
                     throw UnexpectedToken(TokenType.Name);
 
-                string name = _tokenReader.StringValue;
+                string name = _lexer.StringValue;
 
                 NextTokenRequired();
-                if (_tokenReader.TokenType != TokenType.Colon)
+                if (_lexer.TokenType != TokenType.Colon)
                     throw UnexpectedToken(TokenType.Colon);
 
                 NextTokenRequired();
                 ITypeNode typeNode = ParseType(depth);
 
                 IValueNode defaultValue = null;
-                if (_tokenReader.TokenType == TokenType.Eq)
+                if (_lexer.TokenType == TokenType.Eq)
                     defaultValue = ParseValue(depth);
 
                 VariableDefinitionNode node = new VariableDefinitionNode()
@@ -216,7 +216,7 @@ namespace SharpGraphQl
                 throw ParseError("Max recursion depth exceeded");
 
             var nullableType = ParseNullableType(depth);
-            if (_tokenReader.TokenType == TokenType.Bang)
+            if (_lexer.TokenType == TokenType.Bang)
             {
                 NextTokenRequired();
                 return new NotNullTypeNode(nullableType);
@@ -227,7 +227,7 @@ namespace SharpGraphQl
 
         private ITypeNode ParseNullableType(int depth)
         {
-            switch(_tokenReader.TokenType)
+            switch(_lexer.TokenType)
             {
                 case TokenType.Name:
                     return ParseNamedType();
@@ -242,7 +242,7 @@ namespace SharpGraphQl
 
         private ITypeNode ParseNamedType()
         {
-            var namedType = new NamedTypeNode(_tokenReader.StringValue);
+            var namedType = new NamedTypeNode(_lexer.StringValue);
             NextTokenRequired();
             return namedType;
         }
@@ -254,7 +254,7 @@ namespace SharpGraphQl
                 Inner = ParseType(depth + 1)
             };
 
-            if (_tokenReader.TokenType != TokenType.CloseBracket)
+            if (_lexer.TokenType != TokenType.CloseBracket)
                 throw UnexpectedToken(TokenType.CloseBracket);
             NextTokenRequired();
 
@@ -290,7 +290,7 @@ namespace SharpGraphQl
         {
             if (depth > MaxSelectionSetDepth)
                 throw ParseError("Cannot parse selection sets more than " + MaxSelectionSetDepth + " levels deep");
-            if (_tokenReader.TokenType != TokenType.OpenBrace)
+            if (_lexer.TokenType != TokenType.OpenBrace)
                 throw new InvalidOperationException("Selection set must start with opening brace");
 
             NextTokenRequired();
@@ -299,7 +299,7 @@ namespace SharpGraphQl
 
             while(true)
             {
-                switch(_tokenReader.TokenType)
+                switch(_lexer.TokenType)
                 {
                     case TokenType.Name:
                         var fieldNode = ParseField(depth);
@@ -323,10 +323,10 @@ namespace SharpGraphQl
 
         private FieldNode ParseField(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 throw new InvalidOperationException("Field should start with a name");
 
-            string firstName = _tokenReader.StringValue;
+            string firstName = _lexer.StringValue;
             NextTokenRequired();
             
             string name;
@@ -335,14 +335,14 @@ namespace SharpGraphQl
             List<DirectiveNode> directives = null;
             SelectionSetNode selectionSet = null;
 
-            if (_tokenReader.TokenType == TokenType.Colon)
+            if (_lexer.TokenType == TokenType.Colon)
             {
                 NextTokenRequired();
-                if (_tokenReader.TokenType != TokenType.Name)
+                if (_lexer.TokenType != TokenType.Name)
                     throw UnexpectedToken(TokenType.Name);
                 
                 alias = firstName;
-                name = _tokenReader.StringValue;
+                name = _lexer.StringValue;
                 NextTokenRequired();
             }
             else
@@ -351,17 +351,17 @@ namespace SharpGraphQl
                 name = firstName;
             }
 
-            if (_tokenReader.TokenType == TokenType.OpenParen)
+            if (_lexer.TokenType == TokenType.OpenParen)
             {
                 arguments = ParseArguments(depth);
             }
 
-            if (_tokenReader.TokenType == TokenType.AtSign)
+            if (_lexer.TokenType == TokenType.AtSign)
             {
                 directives = ParseDirectives(depth);
             }
 
-            if (_tokenReader.TokenType == TokenType.OpenBrace)
+            if (_lexer.TokenType == TokenType.OpenBrace)
             {
                 selectionSet = ParseSelectionSet(depth + 1);
             }
@@ -378,21 +378,21 @@ namespace SharpGraphQl
 
         private List<ArgumentNode> ParseArguments(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.OpenParen)
+            if (_lexer.TokenType != TokenType.OpenParen)
                 throw new InvalidOperationException("Arguments should start with a OpenParen");
 
             List<ArgumentNode> argumentNodes = new List<ArgumentNode>();
 
             NextTokenRequired();
-            while(_tokenReader.TokenType != TokenType.CloseParen)
+            while(_lexer.TokenType != TokenType.CloseParen)
             {
-                if (_tokenReader.TokenType != TokenType.Name)
+                if (_lexer.TokenType != TokenType.Name)
                     throw UnexpectedToken(TokenType.Name);
 
-                string name = _tokenReader.StringValue;
+                string name = _lexer.StringValue;
 
                 NextTokenRequired();
-                if (_tokenReader.TokenType != TokenType.Colon)
+                if (_lexer.TokenType != TokenType.Colon)
                     throw UnexpectedToken(TokenType.Colon);
 
                 NextTokenRequired();
@@ -415,18 +415,18 @@ namespace SharpGraphQl
             if (depth > MaxSelectionSetDepth)
                 throw ParseError("Cannot parse values more than " + MaxSelectionSetDepth + " levels deep");
 
-            switch(_tokenReader.TokenType)
+            switch(_lexer.TokenType)
             {
                 case TokenType.Dollar:
                     return ParseVariable();
                 case TokenType.IntValue:
-                    int intValue = _tokenReader.IntValue ??
+                    int intValue = _lexer.IntValue ??
                                 throw new InvalidOperationException("Tokenizer should have an int value");
                     NextTokenRequired();
                     return new IntValueNode() { Value = intValue };
 
                 case TokenType.FloatValue:
-                    double floatValue = _tokenReader.DoubleValue ??
+                    double floatValue = _lexer.DoubleValue ??
                                         throw new InvalidOperationException("Tokenizer should have an float value");
                     NextTokenRequired();
                     return new FloatValueNode()
@@ -435,7 +435,7 @@ namespace SharpGraphQl
                     };
 
                 case TokenType.StringValue:
-                    string stringValue = _tokenReader.StringValue;
+                    string stringValue = _lexer.StringValue;
                     NextTokenRequired();
                     return new StringValueNode()
                     {
@@ -459,17 +459,17 @@ namespace SharpGraphQl
 
         private IValueNode ParseObjectValue(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.OpenBrace)
+            if (_lexer.TokenType != TokenType.OpenBrace)
                 throw new InvalidOperationException("Object should start with open brace");
 
             NextTokenRequired();
             List<ObjectValueFieldNode> objectFields = new List<ObjectValueFieldNode>();
-            while(_tokenReader.TokenType != TokenType.CloseBrace)
+            while(_lexer.TokenType != TokenType.CloseBrace)
             {
-                if (_tokenReader.TokenType != TokenType.Name)
+                if (_lexer.TokenType != TokenType.Name)
                     throw UnexpectedToken(TokenType.Name, TokenType.CloseBrace);
 
-                string name = _tokenReader.StringValue;
+                string name = _lexer.StringValue;
                 NextTokenRequired();
                 IValueNode value = ParseValue(depth + 1);
 
@@ -488,13 +488,13 @@ namespace SharpGraphQl
 
         private IValueNode ParseListValue(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.OpenBracket)
+            if (_lexer.TokenType != TokenType.OpenBracket)
                 throw new InvalidOperationException("List should start with open bracket");
 
             NextTokenRequired();
 
             List<IValueNode> listContents = new List<IValueNode>();
-            while(_tokenReader.TokenType != TokenType.CloseBracket)
+            while(_lexer.TokenType != TokenType.CloseBracket)
             {
                 IValueNode value = ParseValue(depth + 1);
                 listContents.Add(value);
@@ -506,21 +506,21 @@ namespace SharpGraphQl
 
         private IValueNode ParseVariable()
         {
-            if (_tokenReader.TokenType != TokenType.Dollar)
+            if (_lexer.TokenType != TokenType.Dollar)
                 throw new InvalidOperationException("Fragment should start with dollar");
 
             NextTokenRequired();
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 throw UnexpectedToken(TokenType.Name);
 
-            VariableValueNode variable = new VariableValueNode(_tokenReader.StringValue);
+            VariableValueNode variable = new VariableValueNode(_lexer.StringValue);
             NextTokenRequired();
             return variable;
         }
 
         private IValueNode ParseNameValue()
         {
-            string name = _tokenReader.StringValue;
+            string name = _lexer.StringValue;
             if (string.Equals(name, "true", StringComparison.Ordinal))
                 return new BooleanValueNode() { Value = true };
             if (string.Equals(name, "false", StringComparison.Ordinal))
@@ -534,14 +534,14 @@ namespace SharpGraphQl
 
         private ISelectionItemNode ParseFragmentInSelectionSet(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.Ellipsis)
+            if (_lexer.TokenType != TokenType.Ellipsis)
                 throw new InvalidOperationException("Fragment should start with ellipsis");
 
             NextTokenRequired();
-            switch (_tokenReader.TokenType)
+            switch (_lexer.TokenType)
             {
                 case TokenType.Name:
-                    if (_tokenReader.StringValue.Equals("on", StringComparison.Ordinal))
+                    if (_lexer.StringValue.Equals("on", StringComparison.Ordinal))
                         return ParseInlineFragmentWithTypeCondition(depth);
 
                     return ParseFragmentSpread(depth);
@@ -556,23 +556,23 @@ namespace SharpGraphQl
 
         private ISelectionItemNode ParseInlineFragmentWithTypeCondition(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 throw new InvalidOperationException("Expected a name");
 
             NextTokenRequired();
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 throw UnexpectedToken(TokenType.Name);
 
-            string typeName = _tokenReader.StringValue;
+            string typeName = _lexer.StringValue;
             List<DirectiveNode> directives = null;
 
             NextTokenRequired();
-            if (_tokenReader.TokenType == TokenType.AtSign)
+            if (_lexer.TokenType == TokenType.AtSign)
             {
                 directives = ParseDirectives(depth);
             }
 
-            if (_tokenReader.TokenType != TokenType.OpenBrace)
+            if (_lexer.TokenType != TokenType.OpenBrace)
             {
                 throw UnexpectedToken(TokenType.OpenBrace);
             }
@@ -589,7 +589,7 @@ namespace SharpGraphQl
 
         private ISelectionItemNode ParseInlineFragment(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.OpenBrace)
+            if (_lexer.TokenType != TokenType.OpenBrace)
                 throw new InvalidOperationException("Expected a OpenBrace");
 
             SelectionSetNode selectionSet = ParseSelectionSet(depth + 1);
@@ -603,14 +603,14 @@ namespace SharpGraphQl
 
         private ISelectionItemNode ParseFragmentSpread(int depth)
         {
-            if (_tokenReader.TokenType != TokenType.Name)
+            if (_lexer.TokenType != TokenType.Name)
                 throw new InvalidOperationException("Expected a name");
 
-            string name = _tokenReader.StringValue;
+            string name = _lexer.StringValue;
             List<DirectiveNode> directiveNodes = null;
             if (NextToken())
             {
-                if (_tokenReader.TokenType == TokenType.AtSign)
+                if (_lexer.TokenType == TokenType.AtSign)
                     directiveNodes = ParseDirectives(depth);
             }
 
@@ -629,7 +629,7 @@ namespace SharpGraphQl
 
         private Exception UnexpectedToken(params TokenType[] tokensExpected)
         {
-            throw new GraphQueryParseException("Invalid token '" + _tokenReader.TokenType
+            throw new GraphQueryParseException("Invalid token '" + _lexer.TokenType
                                                    + "'. Expected: " + string.Join(", ", tokensExpected));
         }
 
@@ -643,11 +643,11 @@ namespace SharpGraphQl
         {
             while (true)
             {
-                bool ok = _tokenReader.Next();
+                bool ok = _lexer.Next();
                 if (!ok)
                     return false;
 
-                var token = _tokenReader.TokenType;
+                var token = _lexer.TokenType;
                 switch (token)
                 {
                     case TokenType.Whitespace: 
