@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
+using System.Linq;
 
 namespace SharpGraphQl
 {
@@ -25,51 +25,120 @@ namespace SharpGraphQl
                 switch(_lexer.TokenType)
                 {
                     case TokenType.Name:
-                        node.Definitions.Add(ParseExecutableDefinition());
+                        node.Definitions.Add(ParseDefinitionWithLeadingName());
                         break;
 
                     case TokenType.OpenBrace:
                         node.Definitions.Add(ParseAnonomousDefinition());
                         break;
 
+                    case TokenType.StringValue:
+                        node.Definitions.Add(ParseTypeDefintionWithDocumenation());
+                        break;
+
                     default:
-                        throw UnexpectedToken(TokenType.Name, TokenType.OpenBrace);
+                        throw BadDefinitionStart();
                 }
             }
 
             return node;
         }
 
-        private IDefinitionNode ParseExecutableDefinition()
+        private IDefinitionNode ParseDefinitionWithLeadingName()
         {
-            if (_lexer.TokenType != TokenType.Name)
-                throw new InvalidOperationException("Executable definition should start with a name");
-
             string name = _lexer.StringValue;
-            if (string.Equals(name, "fragment", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(name, "query", StringComparison.Ordinal))
+                return ParseOperationDefinition(OperationType.Query);
+            if (string.Equals(name, "mutation", StringComparison.Ordinal))
+                return ParseOperationDefinition(OperationType.Mutation);
+            if (string.Equals(name, "subscription", StringComparison.Ordinal))
+                return ParseOperationDefinition(OperationType.Subscription);
+            if (string.Equals(name, "fragment", StringComparison.Ordinal))
                 return ParseFragmentDefinition();
+            if (string.Equals(name, "schema", StringComparison.Ordinal))
+                throw ParseError("Schema definitions aren't supported");
+            if (string.Equals(name, "scalar", StringComparison.Ordinal))
+                throw ParseError("Scalar definitions aren't supported");
+            if (string.Equals(name, "type", StringComparison.Ordinal))
+                throw ParseError("Type definitions aren't supported");
+            if (string.Equals(name, "interface", StringComparison.Ordinal))
+                throw ParseError("Interface definitions aren't supported");
+            if (string.Equals(name, "union", StringComparison.Ordinal))
+                throw ParseError("Union definitions aren't supported");
+            if (string.Equals(name, "enum", StringComparison.Ordinal))
+                throw ParseError("Enum definitions aren't supported");
+            if (string.Equals(name, "input", StringComparison.Ordinal))
+                throw ParseError("Input object definitions aren't supported");
+            if (string.Equals(name, "directive", StringComparison.Ordinal))
+                throw ParseError("Directive definitions aren't supported");
+            if (string.Equals(name, "extension", StringComparison.Ordinal))
+                throw ParseError("Type system extensions aren't supported");
 
-            return ParseOperationDefinition();
+            throw BadDefinitionStart();
+        }
+
+        private Exception BadDefinitionStart()
+        {
+            return UnexpectedToken(
+                new [] { "query", "mutation", "subscription", "fragment",
+                         "schema", "scalar", "type", "interface", "union", "enum",
+                         "input", "directive", "extension" },
+                new [] {TokenType.StringValue, TokenType.OpenBrace});
+        }
+
+        private IDefinitionNode ParseTypeDefintionWithDocumenation()
+        {
+            string description = _lexer.StringValue;
+
+            NextToken();
+            if (_lexer.TokenType == TokenType.Name)
+            {
+                string name = _lexer.StringValue;
+
+                if (string.Equals(name, "schema", StringComparison.Ordinal))
+                    throw ParseError("Schema definitions aren't supported");
+                if (string.Equals(name, "scalar", StringComparison.Ordinal))
+                    throw ParseError("Scalar definitions aren't supported");
+                if (string.Equals(name, "type", StringComparison.Ordinal))
+                    throw ParseError("Type definitions aren't supported");
+                if (string.Equals(name, "interface", StringComparison.Ordinal))
+                    throw ParseError("Interface definitions aren't supported");
+                if (string.Equals(name, "union", StringComparison.Ordinal))
+                    throw ParseError("Union definitions aren't supported");
+                if (string.Equals(name, "enum", StringComparison.Ordinal))
+                    throw ParseError("Enum definitions aren't supported");
+                if (string.Equals(name, "input", StringComparison.Ordinal))
+                    throw ParseError("Input object definitions aren't supported");
+                if (string.Equals(name, "directive", StringComparison.Ordinal))
+                    throw ParseError("Directive definitions aren't supported");
+                if (string.Equals(name, "extension", StringComparison.Ordinal))
+                    throw ParseError("Type system extensions aren't supported");
+            }
+
+            throw UnexpectedToken(
+                "schema", "scalar", "type", "interface", "union", "enum",
+                "input", "directive", "extension"
+            );
         }
 
         private FragmentDefinitionNode ParseFragmentDefinition()
         {
-            NextTokenRequired();
+            NextToken();
             if (_lexer.TokenType != TokenType.Name)
                 UnexpectedToken(TokenType.Name);
             string name = _lexer.StringValue;
-            NextTokenRequired();
 
-            if (_lexer.TokenType != TokenType.Name)
-                UnexpectedToken(TokenType.Name);
-            if (!string.Equals(_lexer.StringValue, "on", StringComparison.Ordinal))
-                throw ParseError("Expeced 'on' got: " + _lexer.StringValue);
-            NextTokenRequired();
+            NextToken();
+            if (_lexer.TokenType != TokenType.Name &&
+                !string.Equals(_lexer.StringValue, "on", StringComparison.Ordinal))
+                throw UnexpectedToken("on");
 
+            NextToken();
             if (_lexer.TokenType != TokenType.Name)
                 UnexpectedToken(TokenType.Name);
             string typeName = _lexer.StringValue;
-            NextTokenRequired();
+
+            NextToken();
 
             List<DirectiveNode> directives = null;
             if (_lexer.TokenType == TokenType.AtSign)
@@ -92,18 +161,17 @@ namespace SharpGraphQl
             };
         }
 
-        private OperationDefinitionNode ParseOperationDefinition()
+        private OperationDefinitionNode ParseOperationDefinition(OperationType operationType)
         {
-            OperationType operationType = GetOperationType(_lexer.StringValue);
             string operationName = null;
             List<VariableDefinitionNode> variablesList = null;
             List<DirectiveNode> directives = null;
 
-            NextTokenRequired();
+            NextToken();
             if (_lexer.TokenType == TokenType.Name)
             {
                 operationName = _lexer.StringValue;
-                NextTokenRequired();
+                NextToken();
             }
 
             if (_lexer.TokenType == TokenType.OpenParen)
@@ -141,7 +209,7 @@ namespace SharpGraphQl
             List<DirectiveNode> directives = new List<DirectiveNode>();
             do
             {
-                NextTokenRequired();
+                NextToken();
                 if (_lexer.TokenType != TokenType.Name)
                     throw UnexpectedToken(TokenType.Name);
 
@@ -171,7 +239,7 @@ namespace SharpGraphQl
             if (_lexer.TokenType != TokenType.OpenParen)
                 throw new InvalidOperationException("Variables should start at open paren");
 
-            NextTokenRequired();
+            NextToken();
 
             List<VariableDefinitionNode> variableNodes = new List<VariableDefinitionNode>();
             while(_lexer.TokenType != TokenType.CloseParen)
@@ -179,17 +247,17 @@ namespace SharpGraphQl
                 if (_lexer.TokenType != TokenType.Dollar)
                     throw UnexpectedToken(TokenType.Dollar, TokenType.CloseParen);
 
-                NextTokenRequired();
+                NextToken();
                 if (_lexer.TokenType != TokenType.Name)
                     throw UnexpectedToken(TokenType.Name);
 
                 string name = _lexer.StringValue;
 
-                NextTokenRequired();
+                NextToken();
                 if (_lexer.TokenType != TokenType.Colon)
                     throw UnexpectedToken(TokenType.Colon);
 
-                NextTokenRequired();
+                NextToken();
                 ITypeNode typeNode = ParseType(depth);
 
                 IValueNode defaultValue = null;
@@ -206,7 +274,7 @@ namespace SharpGraphQl
                 variableNodes.Add(node);
             }
 
-            NextTokenRequired();
+            NextToken();
             return variableNodes;
         }
 
@@ -218,7 +286,7 @@ namespace SharpGraphQl
             var nullableType = ParseNullableType(depth);
             if (_lexer.TokenType == TokenType.Bang)
             {
-                NextTokenRequired();
+                NextToken();
                 return new NotNullTypeNode(nullableType);
             }
 
@@ -243,7 +311,7 @@ namespace SharpGraphQl
         private ITypeNode ParseNamedType()
         {
             var namedType = new NamedTypeNode(_lexer.StringValue);
-            NextTokenRequired();
+            NextToken();
             return namedType;
         }
 
@@ -256,21 +324,9 @@ namespace SharpGraphQl
 
             if (_lexer.TokenType != TokenType.CloseBracket)
                 throw UnexpectedToken(TokenType.CloseBracket);
-            NextTokenRequired();
+            NextToken();
 
             return listType;
-        }
-
-        private OperationType GetOperationType(string name)
-        {
-            if (string.Equals(name, "query", StringComparison.Ordinal))
-                return OperationType.Query;
-            if (string.Equals(name, "mutation", StringComparison.Ordinal))
-                return OperationType.Mutation;
-            if (string.Equals(name, "subscription", StringComparison.Ordinal))
-                return OperationType.Subscription;
-
-            throw ParseError("Invalid operation type: " + name);
         }
 
         private OperationDefinitionNode ParseAnonomousDefinition()
@@ -293,7 +349,7 @@ namespace SharpGraphQl
             if (_lexer.TokenType != TokenType.OpenBrace)
                 throw new InvalidOperationException("Selection set must start with opening brace");
 
-            NextTokenRequired();
+            NextToken();
             SelectionSetNode selectionSetNode = new SelectionSetNode();
             selectionSetNode.Items = new List<ISelectionItemNode>();
 
@@ -327,7 +383,7 @@ namespace SharpGraphQl
                 throw new InvalidOperationException("Field should start with a name");
 
             string firstName = _lexer.StringValue;
-            NextTokenRequired();
+            NextToken();
             
             string name;
             string alias;
@@ -337,13 +393,13 @@ namespace SharpGraphQl
 
             if (_lexer.TokenType == TokenType.Colon)
             {
-                NextTokenRequired();
+                NextToken();
                 if (_lexer.TokenType != TokenType.Name)
                     throw UnexpectedToken(TokenType.Name);
                 
                 alias = firstName;
                 name = _lexer.StringValue;
-                NextTokenRequired();
+                NextToken();
             }
             else
             {
@@ -383,7 +439,7 @@ namespace SharpGraphQl
 
             List<ArgumentNode> argumentNodes = new List<ArgumentNode>();
 
-            NextTokenRequired();
+            NextToken();
             while(_lexer.TokenType != TokenType.CloseParen)
             {
                 if (_lexer.TokenType != TokenType.Name)
@@ -391,11 +447,11 @@ namespace SharpGraphQl
 
                 string name = _lexer.StringValue;
 
-                NextTokenRequired();
+                NextToken();
                 if (_lexer.TokenType != TokenType.Colon)
                     throw UnexpectedToken(TokenType.Colon);
 
-                NextTokenRequired();
+                NextToken();
                 var value = ParseValue(depth);
 
                 ArgumentNode node = new ArgumentNode
@@ -406,7 +462,7 @@ namespace SharpGraphQl
                 argumentNodes.Add(node);
             }
 
-            NextTokenRequired();
+            NextToken();
             return argumentNodes;
         }
 
@@ -422,13 +478,13 @@ namespace SharpGraphQl
                 case TokenType.IntValue:
                     int intValue = _lexer.IntValue ??
                                 throw new InvalidOperationException("Tokenizer should have an int value");
-                    NextTokenRequired();
+                    NextToken();
                     return new IntValueNode() { Value = intValue };
 
                 case TokenType.FloatValue:
                     double floatValue = _lexer.DoubleValue ??
                                         throw new InvalidOperationException("Tokenizer should have an float value");
-                    NextTokenRequired();
+                    NextToken();
                     return new FloatValueNode()
                     {
                         Value = floatValue
@@ -436,7 +492,7 @@ namespace SharpGraphQl
 
                 case TokenType.StringValue:
                     string stringValue = _lexer.StringValue;
-                    NextTokenRequired();
+                    NextToken();
                     return new StringValueNode()
                     {
                         Value = stringValue
@@ -462,7 +518,7 @@ namespace SharpGraphQl
             if (_lexer.TokenType != TokenType.OpenBrace)
                 throw new InvalidOperationException("Object should start with open brace");
 
-            NextTokenRequired();
+            NextToken();
             List<ObjectValueFieldNode> objectFields = new List<ObjectValueFieldNode>();
             while(_lexer.TokenType != TokenType.CloseBrace)
             {
@@ -470,7 +526,7 @@ namespace SharpGraphQl
                     throw UnexpectedToken(TokenType.Name, TokenType.CloseBrace);
 
                 string name = _lexer.StringValue;
-                NextTokenRequired();
+                NextToken();
                 IValueNode value = ParseValue(depth + 1);
 
                 ObjectValueFieldNode fieldNode = new ObjectValueFieldNode()
@@ -482,7 +538,7 @@ namespace SharpGraphQl
                 objectFields.Add(fieldNode);
             }
 
-            NextTokenRequired();
+            NextToken();
             return new ObjectValueNode(objectFields);
         }
 
@@ -491,7 +547,7 @@ namespace SharpGraphQl
             if (_lexer.TokenType != TokenType.OpenBracket)
                 throw new InvalidOperationException("List should start with open bracket");
 
-            NextTokenRequired();
+            NextToken();
 
             List<IValueNode> listContents = new List<IValueNode>();
             while(_lexer.TokenType != TokenType.CloseBracket)
@@ -500,7 +556,7 @@ namespace SharpGraphQl
                 listContents.Add(value);
             }
 
-            NextTokenRequired();
+            NextToken();
             return new ListValueNode(listContents);
         }
 
@@ -509,12 +565,12 @@ namespace SharpGraphQl
             if (_lexer.TokenType != TokenType.Dollar)
                 throw new InvalidOperationException("Fragment should start with dollar");
 
-            NextTokenRequired();
+            NextToken();
             if (_lexer.TokenType != TokenType.Name)
                 throw UnexpectedToken(TokenType.Name);
 
             VariableValueNode variable = new VariableValueNode(_lexer.StringValue);
-            NextTokenRequired();
+            NextToken();
             return variable;
         }
 
@@ -528,7 +584,7 @@ namespace SharpGraphQl
             if (string.Equals(name, "null", StringComparison.Ordinal))
                 return new NullValueNode();
  
-            NextTokenRequired();
+            NextToken();
             return new EnumValueNode(name);
         }
 
@@ -537,7 +593,7 @@ namespace SharpGraphQl
             if (_lexer.TokenType != TokenType.Ellipsis)
                 throw new InvalidOperationException("Fragment should start with ellipsis");
 
-            NextTokenRequired();
+            NextToken();
             switch (_lexer.TokenType)
             {
                 case TokenType.Name:
@@ -559,14 +615,14 @@ namespace SharpGraphQl
             if (_lexer.TokenType != TokenType.Name)
                 throw new InvalidOperationException("Expected a name");
 
-            NextTokenRequired();
+            NextToken();
             if (_lexer.TokenType != TokenType.Name)
                 throw UnexpectedToken(TokenType.Name);
 
             string typeName = _lexer.StringValue;
             List<DirectiveNode> directives = null;
 
-            NextTokenRequired();
+            NextToken();
             if (_lexer.TokenType == TokenType.AtSign)
             {
                 directives = ParseDirectives(depth);
@@ -624,19 +680,78 @@ namespace SharpGraphQl
 
         private Exception ParseError(string message)
         {
-            throw new GraphQueryParseException(message);
+            throw new GraphQueryParseException(message, _lexer.StartPosition);
         }
 
         private Exception UnexpectedToken(params TokenType[] tokensExpected)
         {
-            throw new GraphQueryParseException("Invalid token '" + _lexer.TokenType
-                                                   + "'. Expected: " + string.Join(", ", tokensExpected));
+            return UnexpectedToken(new string[0], tokensExpected);
         }
 
-        private void NextTokenRequired()
+        private Exception UnexpectedToken(params string[] pseudoKeywordsExpected)
         {
-            if (!NextToken())
-                throw ParseError("Unexpected end of document");
+            return UnexpectedToken(pseudoKeywordsExpected, new TokenType[0]);
+        }
+
+        private Exception UnexpectedToken(string[] pseudoKeywordsExpected, TokenType[] tokensExpected)
+        {
+            string expectedString = string.Join(", ",
+                pseudoKeywordsExpected.Select(x => "'" + x + "'").Union(
+                    tokensExpected.Select(y => NameToken(y) ?? y.ToString())
+                ));
+
+            throw new GraphQueryParseException("Invalid token '" + CurrentToken()
+                                                   + "'. Expected: " + expectedString,
+                _lexer.StartPosition);
+        }
+
+        private string CurrentToken()
+        {
+            string name = NameToken(_lexer.TokenType);
+            if (name != null)
+                return name;
+
+            if (_lexer.TokenType == TokenType.Name)
+                return _lexer.StringValue;
+
+            return _lexer.TokenType.ToString();
+        }
+
+        private string NameToken(TokenType tokenType)
+        {
+            switch (tokenType)
+            {
+                case TokenType.OpenBrace:
+                    return "{";
+                case TokenType.CloseBrace:
+                    return "}";
+                case TokenType.AtSign:
+                    return "@";
+                case TokenType.Bang:
+                    return "!";
+                case TokenType.OpenBracket:
+                    return "[" ;
+                case TokenType.CloseBracket:
+                    return "]" ;
+                case TokenType.OpenParen:
+                    return "(";
+                case TokenType.CloseParen:
+                    return ")";
+                case TokenType.Colon:
+                    return ":";
+                case TokenType.Comma:
+                    return ",";
+                case TokenType.Dollar:
+                    return "$";
+                case TokenType.Ellipsis:
+                    return "...";
+                case TokenType.Pipe:
+                    return "|";
+                case TokenType.Eq:
+                    return "=";
+                default:
+                    return null;
+            }
         }
 
         private bool NextToken()
@@ -665,8 +780,12 @@ namespace SharpGraphQl
 
     public class GraphQueryParseException : Exception
     {
-        public GraphQueryParseException(string message)
+        public GraphQueryParseException(string message, LexerPosition position)
             : base(message)
-        {}
+        {
+            ErrorPosition = position;   
+        }
+
+        public LexerPosition ErrorPosition { get; }
     }
 }
